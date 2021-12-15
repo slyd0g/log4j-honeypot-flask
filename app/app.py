@@ -2,9 +2,12 @@ from flask import Flask, redirect, url_for, request
 import requests
 import json
 import os
+from log4shell_regexes import *
 
+
+tt = lambda s: [(k, list(v.keys())) for k, v in test_thorough(s).items()]
 #### Set your Slack or Teams or Mattermost webhook here, or in environment variable WEBHOOK_URL ####
-webhook_url = ""
+webhook_url = "<FILL_ME_IN>"
 # For help setting up the webhook, see:
 # Slack: https://api.slack.com/messaging/webhooks
 # Teams: https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook
@@ -34,22 +37,20 @@ if "HONEYPOT_PORT" in os.environ and os.environ["HONEYPOT_PORT"].strip() != "":
 
 app = Flask(__name__)
 
-def reportHit(request):
-    msglines = []
-    msglines.append("Alert from log4j honeypot " + honeypot_name)
-    msglines.append("Suspicious request received from IP: "+ request.remote_addr)
-    msglines.append("Review HTTP headers for payloads:")
-    msglines.append("```")
-    for header in request.headers:
-        msglines.append(str(header))
-    for fieldname, value in request.form.items():
-        msglines.append(str((fieldname, value)))
-    msglines.append("```")
+def reportHit(request, regex):
 
-    msg = {'text':'\n '.join(msglines)}
+    message = "Suspicious request received from IP: " + request.remote_addr + "\n"
+    message += "Regex hit: " + str(regex) + "\n"
+    message += "Refer to https://gist.github.com/karanlyons/8635587fd4fa5ddb4071cc44bb497ab6#file-usage-md for regex info\n"
+    message += "Review HTTP headers for payloads:" + "\n"
+    for header in request.headers:
+        message += "    " + str(header) + "\n"
+    for fieldname, value in request.form.items():
+        message += "Review body for payloads:\n"
+        message += "    " + str((fieldname, value)) + "\n"
     response = requests.post(
-        webhook_url, data=json.dumps(msg),
-        headers={'Content-Type': 'application/json'}
+        webhook_url, data=message,
+        headers={'Authorization': '<FILL_ME_IN>'}
     )
     if response.status_code != 200:
         print('Request to webhook returned an error %s, the response is:\n%s' % (response.status_code, response.text))
@@ -69,13 +70,17 @@ login_form = """<html>
 def homepage():
     for header in request.headers:
         print(header)
-        if "${" in header:
-            reportHit(request)
+        if tt(str(header)):
+            regex = tt(str(header))
+            reportHit(request, regex)
     if request.method == 'POST':
         for fieldname, value in request.form.items():
-            print(value)
-            if "${" in value:
-                reportHit(request)
+            if tt(str(value)):
+                regex = tt(str(value))
+                reportHit(request, regex)
+            if tt(str(fieldname)):
+                regex = tt(str(fieldname))
+                reportHit(request, regex)
         return("<html><head><title>Login Failed</title></head><body><h1>Login Failed</h1><br/><a href='/'>Try again</a></body></html>")
     else:
         return(login_form)
